@@ -137,8 +137,6 @@ bash command.sh
 
 ## Assignment 4 — Intermediate Code Generation
 
-**Location:** [ICG/code/](ICG/code/)
-
 Extends the parser to emit x86 (8086) assembly code targeting the DOS `MODEL SMALL` architecture.
 
 **Features:**
