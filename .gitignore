@@ -1,0 +1,61 @@
+# -----------------------------
+# OS / Editor clutter
+# -----------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# VS Code workspace state
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# -----------------------------
+# C/C++ build artifacts
+# -----------------------------
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.pdb
+
+build/
+dist/
+out/
+bin/
+obj/
+
+# -----------------------------
+# Flex / Bison generated files
+# -----------------------------
+lex.yy.c
+y.tab.c
+y.tab.h
+parser.tab.c
+parser.tab.h
+
+-----------------------------
+Generated compiler outputs
+-----------------------------
+# **/code.asm
+# **/optcode.asm
+# **/parseTree.txt
+# **/log.txt
+# **/*_log.txt
+# **/error.txt
+# **/*_token.txt
+
+# -----------------------------
+# Temp files
+# -----------------------------
+*.tmp
+*.temp

@@ -1,0 +1,692 @@
+start : program{
+	header(from model to data)
+	global variables(DW n DUP(0000H))
+	.CODE
+
+	GENERATE(all code)
+	
+	print_procedure
+	newline_procedure
+	END main
+}
+
+program : program unit
+		| unit
+	
+unit : var_declaration | func_declaration | func_definition
+     
+
+func_declaration : type_specifier ID LPAREN parameter_list RPAREN SEMICOLON 
+				| type_specifier ID LPAREN RPAREN SEMICOLON
+		
+
+func_definition : type_specifier ID LPAREN parameter_list RPAREN compound_statement
+				{
+					FOR MAIN FUNC
+					[
+					procedure_name PROC
+
+					{MOV AX, @DATA
+					MOV DS, AX}
+					
+					PUSH BP
+					MOV BP, SP
+
+					GENERATE(compound_statement)
+
+					procedure_name_exit:
+
+					{MOV AX, 4CH
+					INT21H}
+
+					ADD SP, <OFFSET>
+					POP BP
+					{//RET} -> no return
+
+					procedure_name ENDP
+					]
+					
+					FOR FUNC OTHER THAN MAIN
+
+					[procedure_name PROC
+					
+					PUSH BP
+					MOV BP, SP
+
+					GENERATE(compound_statement)
+
+					procedure_name_exit:
+
+					ADD SP, <OFFSET>
+					POP BP
+					RET
+
+					procedure_name ENDP]
+				} 
+				| type_specifier ID LPAREN RPAREN compound_statement{
+					SAME AS PREVIOUS RULE
+				}
+ 						
+
+parameter_list  : parameter_list COMMA type_specifier ID 
+				| parameter_list COMMA type_specifier 
+				| type_specifier ID 
+				| type_specifier
+
+
+compound_statement : LCURL statements RCURL {
+					JUST ADJUST LABELS
+					
+					statements->END 
+					= [compound_statement->END] 
+					-> (IF c_s IS NULL NEWLABEL())
+
+					GENERATE(statements)
+				
+				}| LCURL RCURL
+ 		    
+var_declaration : type_specifier declaration_list SEMICOLON
+ 		 
+type_specifier	: INT | FLOAT | VOID
+ 		
+declaration_list : declaration_list COMMA ID {
+				IF ID -> NOT global{
+					SUB SP, 2
+				}
+				GENERATE()
+}
+				| ID {
+					SAME AS PREVIOUS
+				}
+				| declaration_list COMMA ID LTHIRD CONST_INT RTHIRD {
+					IF ID -> NOT global{
+					SUB SP, 2 * CONST_INT
+					}
+				GENERATE()
+				}
+				
+			| ID LTHIRD CONST_INT RTHIRD{
+				SAME AS PREVIOUS
+			}
+ 		  
+
+statements : statement {
+			statement->END = statements->END
+			GENERATE()
+			PRINT(statements)
+			}
+			| statements1 statement{
+				statements1->END = NEWLABEL()
+				statement->END = statements->END
+
+				GENERATECODE(ALL)
+
+				PRINT(statements->END)
+			}
+	   
+
+statement : var_declaration 
+	  | expression_statement
+	  | compound_statement{
+		compound_statement->END = NEWLABEL()
+		GENERATE()
+	  }
+	  | FOR LPAREN expression_statement1 expression_statement2 expression RPAREN statement1{
+		
+		GENERATE(expression_statement1)
+		
+		string loop = newlabel();
+
+		PRINT(loop)
+		
+		ADJUST LABELS
+
+		expression_statement2->CONDITION = TRUE
+		expression_statement2->TRUELABEL = NEWLABEL()
+		expression_statement2->FALSELABEL = statement->END
+		statement1->END = NEWLABEL()
+
+		GENERATE(expression_statement2)
+
+		PRINT(expression_statement2->TRUELABEL)
+
+		GENERATE(statement1)
+		GENERATE(expression)
+
+		JMP loop
+
+	  }
+	  | IF LPAREN expression RPAREN statement1{
+		ADJUST LABELS
+
+		expression->TRUELABEL = NEWLABEL()
+		expression->FALSELABEL = statement->END
+		expression->CONDITION = TRUE
+		statement1->END = statement->END
+
+		GENERATE(expression)
+		PRINT(expression->TRUELABEL)
+		GENERATE(statement1)
+
+	  }
+	  | IF LPAREN expression RPAREN statement1 ELSE statement2{
+		
+		ADJUST LABELS
+
+		expression->TRUELABEL = NEWLABEL()
+		{expression->FALSELABEL = NEWLABEL()}
+		expression->CONDITION = TRUE
+		
+		{statement1->END = expression->FALSELABEL}
+		{statement2->END = statement->END}
+
+		GENERATE(expression)
+		
+		PRINT(expression->TRUELABEL)
+		
+		GENERATE(statement1)
+
+		{JMP statement->END;
+
+		PRINT(expression->FALSELABEL)
+
+		GENERATE(statement2)}
+		}
+	  | WHILE LPAREN expression RPAREN statement1{
+		
+		
+		ADJUST LABELS
+
+		expression->CONDITION = TRUE
+		expression->TRUELABEL = NEWLABEL()
+		expression>FALSELABEL = statement->END
+		statement1->END = statement->END
+
+		string loop = newlabel();
+
+		PRINT(loop)
+
+		GENERATE(expression)
+
+		PRINT(expression->TRUELABEL)
+
+		GENERATE(statement1)
+
+		JMP loop
+	  }
+	  | PRINTLN LPAREN ID RPAREN SEMICOLON{
+		IF ID->GLOBAL{
+			MOV AX, ID
+			CALL PRINTNUMBER
+			CALL NEWLINE
+		}
+		ELSE{
+			PUSH BP
+			MOV BX, <OFFSET OF ID>
+			ADD BP, BX
+			MOV AX, [BP]
+			CALL PRINTNUMBER
+			CALL NEWLINE 
+			POP BP
+
+			(
+				[MOV BP TO MY ID (BY ADD/SUB), THEN COPY 
+			VALUE AT THAT MEMORY ADDRESS TO AX
+			THEN CALL FUNC
+			AT LAST FIX BP]
+			)
+		}
+	  }
+	  | RETURN expression SEMICOLON{
+		GENERATE(expression)
+		
+		MOV DX, CX
+		JMP PROC_EXIT
+
+		(probably final result of expression is saved in CX )
+	  
+	  }
+
+	  
+expression_statement : SEMICOLON	
+					| expression SEMICOLON {
+
+						ADJUST LABELS
+
+						expression->TRUELABEL =>
+						expression->FALSELABEL => AS expression_statement
+						expression->CONDITION =>
+
+						GENERATE(expression)
+					}
+	  
+variable : ID 	{
+
+		IF ID->GLOBAL {DO NOTHING}
+		IF ID-> LOCAL{
+			PUSH BP
+			MOV BX, <OFFSET OF ID>
+			ADD BP, BX
+
+			(MOV BP TO THAT MEMORY POSITION OF ID)
+		}
+
+		}| ID LTHIRD expression RTHIRD {
+			IF ID->GLOBAL {
+				
+				PUSH BP
+				LEA SI, ID
+				ADD SI, CX
+				ADD SI, CX
+				MOV BP, SI
+				
+				([	LOAD ID BASE ADDR TO SI
+					SI = SI + 2 * CX
+					MOV BP, SI	
+					(MOV BP TO THAT MEMORY POSITION OF ID)]
+				)
+			}
+			IF ID-> LOCAL{
+			
+			PUSH BP
+			MOV BX, CX
+			ADD BX, BX
+			ADD BX, <OFFSET OF ID>
+			ADD BP, BX
+			(
+				BX = 2 * CX
+				BP = OFFSET 0F ID + BX
+				[MOV BP TO THAT MEMORY POSITION OF ID]
+				)
+		}
+		}
+	 
+	 
+ expression : logic_expression	
+ {
+			ADJUST LABELS
+
+			logic_expression->CONDITION =>
+			logic_expression->TRUELABEL =>	AS expression
+			logic_expression->FALSELABEL =>
+
+			GENERATE()
+
+ }| variable ASSIGNOP logic_expression{
+	
+	GENERATE(logic_expression)
+	
+	variable->CONDITION = FALSE
+	logic_expression->CONDITION = FALSE
+
+	IF VARIABLE->GLOBAL AND NOT AN ARRAY
+	{
+
+		MOV VARIABLE, CX
+	}
+	IF VARIABLE->ARRAY OR VARIABLE->LOCAL{
+		
+		PUSH CX
+		GENERATE(variable)
+		POP AX
+		POP CX
+		MOV [BP], CX
+		MOV BP, AX
+
+		([
+			PUSH CX (BECAUSE IT WILL BE USED IN GENERATING CODE)
+			IN GENERATING CODE PUSH BP WILL BE USED
+			SO FIRST SAVE BP IN AX BY {POP AX}
+			THEN SAVE PREV CX IN CURRENT CX POP CX
+			SAVE CX IN LHS OF EQUATION
+			CORRECT BP (BECAUSE YOU HAVE CHANGED BP WHILE ACCESSING VARIABLE)
+		])
+	}
+
+	IF(expression->CONDITIONAL){
+		CMP CX, 0
+		JE expression->FALSELABEL
+		JMP expression->TRUELABEL
+	}
+
+ } 	
+	   
+			
+logic_expression : rel_expression {
+	ADJUST LABELS
+
+	rel_expression->CONDITION =>
+	rel_expression->TRUELABEL =>	AS logic_expression
+	rel_expression->FALSELABEL => 
+
+	GENERATE()
+
+}| rel_expression1 LOGICOP rel_expression2 {
+
+	CONNECTED WITH (AND , OR)
+	
+	FIRST ADJUST 
+
+	rel_expression1->CONDITION =>
+									AS logic_expression
+	rel_expression1->CONDITION =>
+
+	ADJUST LABELS FOR TWO DIFFERENT CONDITIONS
+	
+	IF LOGICOP -> OR{
+		rel_expression1->TRUELABEL => AS logic_expression
+		rel_expression1->FALSELABEL => NEWLABEL()
+		rel_expression2->TRUELABEL => AS logic_expression
+		rel_expression2->FALSELABEL = AS logic_expression
+	}
+
+	IF LOGICOP -> AND{
+		rel_expression1->TRUELABEL => NEWLABEL()
+		rel_expression1->FALSELABEL => AS logic_expression
+		rel_expression2->TRUELABEL => AS logic_expression
+		rel_expression2->FALSELABEL = AS logic_expression
+	}
+
+
+	GENERATE(rel_expression1)
+
+	(NOW IF IT LIKE IF(A > B && C > D) OR E = A > B && C > D)
+
+	(NOW IF IT LIKE IF((A > B && C > D))) 
+		(THEN HAVE TO PRINT EXTRA LABELS IN BETWEEN REL1 AND REL2)
+
+	
+	IF logic_expression IS A CONDITION{
+		
+		(THEN HAVE TO PRINT LABELS BETWEEN)
+		
+		IF LOGICOP -> OR {
+			PRINT(rel_expression1->FALSELABEL)
+		}
+		IF LOGICOP -> AND {
+			PRINT(rel_expression1->TRUELABEL)
+		}
+	}
+
+	IF logic_expression NOT A CONDITION{
+		PUSH CX
+		(JUST SAVE THE CALCULATED VALUE)
+	}
+
+	GENERATE(rel_expression2)
+
+	IF logic_expression IS CONDITIONAL{
+		DO NOTHING
+	}
+
+	ELSE{
+		//YOU HAVE TO DO SOME EXTRA WORK
+
+		([
+			REL1 IS SAVED IN CX
+			REL 2 IS POPPED IN AX
+			NOW AX AND CX IS COMPARED
+		])
+
+		IF LOGICOP IS AND {
+			string x = newlabel();
+            string y = newlabel();
+            string z = newlabel();
+
+			POP AX
+        	CMP AX, 0
+            JE x
+            JCXZ x 
+            JMP y 
+            x: MOV CX, 0
+            JMP z
+			y: MOV CX, 1
+            z:
+		}
+
+		IF LOGICOP IS OR {
+            string x = newlabel();
+            string y = newlabel();
+            string z = newlabel();
+            string a = newlabel();
+        	
+			POP AX
+			CMP AX, 0\n";
+        	JE x
+        	JMP y
+        	x: JCXZ z
+        	y: MOV CX, 1
+        	JMP a
+        	z: MOV CX, 0
+        	a :
+		}
+	}
+
+}	
+		 
+
+rel_expression	: simple_expression {
+	ADJUST LABELS
+
+	FORWARD ALL THE LABELS OF MOTHER
+	condition, truelabel, falselabel
+
+	GENERATE()
+
+}| simple_expression1 RELOP simple_expression2
+{
+	GENERATE(simple_expression1)
+	PUSH CX
+	GENERATE(simple_expression2)
+	POP AX
+	CMP AX, CX
+
+	IF rel_expression->[TRUELABEL/FALSELABEL] IS NOT INITIATED
+	{CREATE NEWLABEL}
+
+	JL/JG/JGE/JLE/JE/JNE rel_expression->TRUELABEL
+	JMP rel_expression->FALSELABEL
+
+	IF rel_expression-> NOT CONDITIONAL
+	{
+		string leave = newlabel();
+
+		rel_expression->TRUELABEL:
+        MOV CX, 1
+        JMP leave
+        rel_expression->FALSELABEL:
+        MOV CX, 0
+        leave:
+	}
+
+}	
+
+				
+simple_expression : term {
+	CARRY FORWARD LABELS
+	TRUE,FALSE,CONDITION
+	GENERATE
+}| simple_expression1 ADDOP term {
+	
+	GENERATE(simple_expression1)
+	PUSH CX
+	GENERATE(term)
+	POP AX
+	ADD CX, AX / SUB AX, CX\n MOV CX, AX
+	
+	IF simple_expression->CONDITION{
+		JCXZ simple_expression->FALSELABEL
+		JMP simple_expression->TRUELABEL
+	}
+}
+		  
+					
+term :	unary_expression {
+	CARRY FORWARD CONDITION,TRUELABEL,FALSELABEL
+	GENERATE()
+}|  term MULOP unary_expression
+{
+	GENERATE(term)
+	PUSH CX
+	GENERATE(unary_expression)
+	POP AX
+
+	IMUL CX\nMOV CX, AX /
+	CWD\n IDIV CX\n MOV CX, AX /
+	CWD\n IDIV CX\n MOV CX, DX /
+
+	IF term IS A CONDITION{
+		JCXZ term->FALSELABEL
+        JMP term->TRUELABEL
+	}
+}
+     
+
+unary_expression : ADDOP unary_expression  {
+	CARRY FORWARD CONDITION,TRUELABEL,FALSELABEL
+	GENERATE()
+	
+	IF ADDOP IS "-"{
+		NEG CX
+	}
+}| NOT unary_expression 
+{
+	CARRY FORWARD CONDITION
+	AND TRUELABEL,FALSELABEL AS REVERSE
+	
+	GENERATE()
+	
+	IF unary_expression IS NOT CONDITION
+	{
+	string l0 = newlabel();
+    string l1 = newlabel();
+    
+	JCXZ l1
+    MOV CX, 0
+    JMP l0
+    l1:
+    MOV CX, 1
+    l0:
+	}
+
+}| factor {
+	CARRY FORWARD CONDITION,TRUELABEL,FALSELABEL
+	GENERATE()
+}
+		 
+	
+factor	: variable 
+	| ID LPAREN argument_list RPAREN{
+		CALL ID
+		MOV CX, DX
+		ADD SP, ARG_NUMBER * 2
+
+		IF factor IS CONDITION{
+			JCXZ factor->FALSELABEL
+			JMP factor->TRUELABEL
+		}
+	}
+	| LPAREN expression RPAREN{
+		GENERATE(expression)
+
+		IF factor IS CONDITION{
+			JCXZ factor->FALSELABEL
+			JMP factor->TRUELABEL
+		}
+	}
+	| CONST_INT {
+		MOV CX, CONST_INT
+
+		IF factor IS CONDITION{
+			JCXZ factor->FALSELABEL
+			JMP factor->TRUELABEL
+		}
+	}
+	| CONST_FLOAT{
+		MOV CX, CONST_FLOAT
+
+		IF factor IS CONDITION{
+			JCXZ factor->FALSELABEL
+			JMP factor->TRUELABEL
+		}
+	}
+	| variable INCOP {
+		GENERATE(variable)
+
+		IF VARIABLE IS GLOBAL AND NOT ARRAY{
+			MOV CX, VARIABLE
+		}
+
+		ELSE{
+			MOV CX, [BP]
+		}
+
+		MOV AX, CX
+		INC CX
+		
+		IF VARIABLE IS GLOBAL AND NOT ARRAY{
+			MOV VARIABLE, CX
+		}
+
+		ELSE{
+			MOV [BP], CX
+			POP BP
+		}
+
+		MOV CX, AX
+
+		IF factor IS CONDITION{
+			JCXZ factor->FALSELABEL
+			JMP factor->TRUELABEL
+		}
+
+	}
+	| variable DECOP{
+		GENERATE(variable)
+
+		IF VARIABLE IS GLOBAL AND NOT ARRAY{
+			MOV CX, VARIABLE
+		}
+
+		ELSE{
+			MOV CX, [BP]
+		}
+
+		MOV AX, CX
+		DEC CX
+		
+		IF VARIABLE IS GLOBAL AND NOT ARRAY{
+			MOV VARIABLE, CX
+		}
+
+		ELSE{
+			MOV [BP], CX
+			POP BP
+		}
+
+		MOV CX, AX
+
+		IF factor IS CONDITION{
+			JCXZ factor->FALSELABEL
+			JMP factor->TRUELABEL
+		}
+	}
+	
+	
+argument_list : arguments | e
+			  
+	
+arguments : arguments COMMA logic_expression {
+	GENERATE(arguments)
+	GENERATE(logic_expression)
+
+	PUSH CX
+
+}| logic_expression{
+	GENERATE(logic_expression)
+
+	PUSH CX
+}
+	      
+ 
+

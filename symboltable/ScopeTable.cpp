@@ -1,0 +1,146 @@
+#include "SymbolInfo.cpp"
+
+class ScopeTable {
+    SymbolInfo *table;
+    int bucketSize;
+    int created_tables;
+    string id;
+
+    unsigned long long sdbm(string str) {
+        unsigned long long hash = 0;
+        int c = 0, i = 0;
+        while (c = str[i]) {
+            hash = c + (hash << 6) + (hash << 16) - hash;
+            i++;
+        }
+
+        return hash;
+    }
+
+public:
+
+    ScopeTable *parentScope;
+
+    ScopeTable() {}
+
+    ScopeTable(int size) {
+        bucketSize = size;
+        table = new SymbolInfo[size];
+        parentScope = NULL;
+        created_tables = 0;
+        id = "";
+    }
+
+    ScopeTable(ScopeTable *parentScope) {
+        table = new SymbolInfo[bucketSize];
+        this->parentScope = parentScope;
+    }
+
+    ~ScopeTable() {
+        delete[] table;
+    }
+
+
+    SymbolInfo *Lookup(const string &s) {
+        SymbolInfo *sym;
+        int hash = sdbm(s) % bucketSize;
+        sym = table + hash;
+        while (sym) {
+            if (sym->getName() == s) return sym;
+            sym = sym->next;
+        }
+        return NULL;
+    }
+
+    bool Insert(string name, string type) {
+        if (Lookup(name)) return false;
+
+        SymbolInfo s(name, type);
+        SymbolInfo *sym;
+
+        int hash = sdbm(name) % bucketSize;
+        sym = table + hash;
+
+        if (sym->getName() == "") {
+            table[hash] = SymbolInfo(name, type);
+            return true;
+        }
+
+        while (sym->next) {
+            sym = sym->next;
+        }
+
+        sym->next = new SymbolInfo(name, type);
+        return true;
+    }
+
+    bool Delete(const string &s) {
+        if (Lookup(s) == NULL) return false;
+
+        SymbolInfo *sym;
+        int hash = sdbm(s) % bucketSize;
+        sym = table + hash;
+
+        if (sym->getName() == s) {
+            if (sym->next == NULL) table[hash] = SymbolInfo();
+            else {
+                table[hash] = *sym->next;
+            }
+            return true;
+        }
+
+        SymbolInfo *ptr = Lookup(s);
+
+        while (sym->next != ptr) {
+            sym = sym->next;
+        }
+
+        sym->next = ptr->next;
+        return true;
+
+    }
+
+    void Print() {
+        cout << "\tScopeTable# " << id << endl;
+        for (int i = 0; i < bucketSize; i++) {
+            cout << "\t" << i + 1;
+            if (table[i].getName() != "") {
+                SymbolInfo *trav = table + i;
+                while (trav) {
+                    cout << " --> ";
+                    cout << "(" << trav->getName() << "," << trav->getType() << ")";
+                    trav = trav->next;
+                }
+            }
+            cout << endl;
+        }
+    }
+
+    void Increment() {
+        created_tables++;
+    }
+
+    void setId() {
+        if (parentScope == NULL) {
+            id += "1";
+            return;
+        }
+        id = parentScope->id + "." + to_string(parentScope->created_tables);
+    }
+};
+
+/*
+int main() {
+    ScopeTable s(7);
+    s.Insert("foo", "function");
+    s.Insert("i", "var");
+    s.Insert("23", "NUMBER");
+    cout << s.Lookup("i") << endl;
+    cout << s.Lookup("23") << endl;
+    cout << s.Delete("i") << endl;
+    cout << s.Delete("j") << endl;
+
+    s.Print();
+
+    return 0;
+}*/
